@@ -18,11 +18,10 @@ header {
 }
 
 header h1 { font-size: 1.5rem; font-weight: 700; }
-header p { font-size: 0.85rem; opacity: 0.85; }
+header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
 
 .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
 
-/* Card */
 .card {
   background: white;
   border-radius: 12px;
@@ -40,7 +39,6 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   padding-bottom: 8px;
 }
 
-/* Metadata grid */
 .meta-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -121,7 +119,7 @@ header p { font-size: 0.85rem; opacity: 0.85; }
 
 #add-week-btn:hover { background: #dbeafe; }
 
-/* Days grid */
+/* Days */
 .days-grid { display: flex; flex-direction: column; gap: 10px; }
 
 .day-row {
@@ -145,6 +143,7 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   font-weight: 700;
   font-size: 0.95rem;
   width: 80px;
+  flex-shrink: 0;
 }
 
 .day-header .day-summary {
@@ -157,6 +156,7 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   font-size: 0.8rem;
   color: #2563eb;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .day-body { padding: 12px 14px; display: none; }
@@ -165,8 +165,8 @@ header p { font-size: 0.85rem; opacity: 0.85; }
 .shifts-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 
 .shift-row {
-  display: grid;
-  grid-template-columns: auto auto auto auto auto 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   background: #f7fafc;
@@ -186,7 +186,7 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   border: 1.5px solid #cbd5e0;
   border-radius: 6px;
   font-size: 0.9rem;
-  width: 110px;
+  width: 112px;
 }
 
 .shift-row input[type="time"]:focus {
@@ -199,22 +199,20 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   border: 1.5px solid #cbd5e0;
   border-radius: 6px;
   font-size: 0.9rem;
-  width: 70px;
+  width: 66px;
 }
 
-.shift-row .lunch-group {
+.lunch-group {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.shift-row .lunch-group label { white-space: nowrap; }
-
 .shift-hours {
   font-size: 0.85rem;
   color: #2563eb;
   font-weight: 700;
-  text-align: right;
+  margin-left: auto;
   white-space: nowrap;
 }
 
@@ -272,18 +270,6 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   letter-spacing: 0.04em;
 }
 
-.week-hours-list { margin-top: 12px; }
-.week-hours-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 6px 0;
-  border-bottom: 1px solid #e2e8f0;
-  font-size: 0.9rem;
-}
-
-.week-hours-item:last-child { border-bottom: none; }
-
-/* Stilling bar */
 .stilling-bar-wrap { margin-top: 16px; }
 .stilling-bar-label {
   display: flex;
@@ -307,15 +293,23 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   min-width: 4px;
 }
 
-/* Email section */
-.email-row {
+.week-hours-list { margin-top: 12px; }
+.week-hours-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.week-hours-item:last-child { border-bottom: none; }
+
+/* Export */
+.export-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  align-items: flex-end;
 }
-
-.email-row .field { flex: 1; min-width: 220px; }
 
 .btn-primary {
   padding: 10px 22px;
@@ -327,11 +321,9 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s;
-  white-space: nowrap;
 }
 
 .btn-primary:hover { background: #1d4ed8; }
-.btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
 
 .btn-secondary {
   padding: 10px 22px;
@@ -343,7 +335,6 @@ header p { font-size: 0.85rem; opacity: 0.85; }
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
-  white-space: nowrap;
 }
 
 .btn-secondary:hover { background: #ebf4ff; }
@@ -357,11 +348,14 @@ header p { font-size: 0.85rem; opacity: 0.85; }
 }
 
 .status-msg.success { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; display: block; }
-.status-msg.error { background: #fff5f5; color: #9b2c2c; border: 1px solid #fc8181; display: block; }
+.status-msg.error   { background: #fff5f5; color: #9b2c2c; border: 1px solid #fc8181; display: block; }
 
-@media (max-width: 640px) {
-  .shift-row {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
-  }
+.email-hint {
+  margin-top: 10px;
+  font-size: 0.88rem;
+  color: #4a5568;
+  background: #fffbeb;
+  border: 1px solid #f6e05e;
+  border-radius: 7px;
+  padding: 10px 12px;
 }

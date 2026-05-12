@@ -1,7 +1,6 @@
 const DAYS = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag', 'Søndag'];
 const FULL_WEEK_HOURS = 37.5;
 
-// State: array of weeks, each week = array of 7 day-shift-arrays
 let weeks = [emptyWeek()];
 let activeWeek = 0;
 
@@ -24,8 +23,7 @@ function calcNetHours(shift) {
   const end = timeToMinutes(shift.end);
   if (end <= start) return 0;
   const gross = end - start;
-  const net = gross - (shift.lunchMinutes || 0);
-  return Math.max(0, net) / 60;
+  return Math.max(0, gross - (shift.lunchMinutes || 0)) / 60;
 }
 
 function weekTotalHours(weekIdx) {
@@ -83,7 +81,7 @@ function renderDays() {
       <div class="day-header" onclick="toggleDay(${di})">
         <span class="day-name">${dayName}</span>
         <span class="day-summary" id="day-summary-${di}">${summaryText}</span>
-        <span class="day-toggle" id="day-toggle-${di}">▼ Rediger</span>
+        <span class="day-toggle">▼ Rediger</span>
       </div>
       <div class="day-body" id="day-body-${di}">
         <div class="shifts-list" id="shifts-list-${di}"></div>
@@ -91,7 +89,6 @@ function renderDays() {
       </div>
     `;
     grid.appendChild(row);
-
     renderShifts(di);
   });
 }
@@ -100,8 +97,7 @@ function renderShifts(di) {
   const list = document.getElementById(`shifts-list-${di}`);
   if (!list) return;
   list.innerHTML = '';
-  const dayShifts = weeks[activeWeek][di];
-  dayShifts.forEach((shift, si) => {
+  weeks[activeWeek][di].forEach((shift, si) => {
     const net = calcNetHours(shift);
     const row = document.createElement('div');
     row.className = 'shift-row';
@@ -165,8 +161,7 @@ function renderAll() {
 // ---- Actions ----
 
 function toggleDay(di) {
-  const body = document.getElementById(`day-body-${di}`);
-  body.classList.toggle('open');
+  document.getElementById(`day-body-${di}`).classList.toggle('open');
 }
 
 function addWeek() {
@@ -186,8 +181,7 @@ function addShift(di) {
   renderShifts(di);
   updateDaySummary(di);
   renderSummary();
-  const body = document.getElementById(`day-body-${di}`);
-  if (body) body.classList.add('open');
+  document.getElementById(`day-body-${di}`).classList.add('open');
 }
 
 function removeShift(di, si) {
@@ -200,105 +194,194 @@ function removeShift(di, si) {
 function updateShift(di, si, field, value) {
   weeks[activeWeek][di][si][field] = value;
   const net = calcNetHours(weeks[activeWeek][di][si]);
-  const hoursEl = document.getElementById(`shift-hours-${di}-${si}`);
-  if (hoursEl) hoursEl.textContent = net.toFixed(2) + ' t';
+  const el = document.getElementById(`shift-hours-${di}-${si}`);
+  if (el) el.textContent = net.toFixed(2) + ' t';
   updateDaySummary(di);
   renderSummary();
 }
 
-// ---- Build payload ----
+// ---- PDF generation (client-side, jsPDF) ----
 
-function buildPayload() {
-  const weeksData = weeks.map((week) =>
-    week.map((dayShifts) =>
-      dayShifts.map((sh) => ({
-        start: sh.start,
-        end: sh.end,
-        lunchMinutes: sh.lunchMinutes,
-        netHours: calcNetHours(sh),
-      }))
-    )
-  );
-  return {
-    turnus: {
-      weeks: weeksData,
-      averageHours: averageHours(),
-    },
-    metadata: {
-      avdeling: document.getElementById('meta-avdeling').value,
-      leder: document.getElementById('meta-leder').value,
-      ansatt: document.getElementById('meta-ansatt').value,
-    },
+function buildPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+  const avg = averageHours();
+  const pct = ((avg / FULL_WEEK_HOURS) * 100).toFixed(1);
+  const today = new Date().toLocaleDateString('nb-NO');
+  const avdeling = document.getElementById('meta-avdeling').value;
+  const leder = document.getElementById('meta-leder').value;
+  const ansatt = document.getElementById('meta-ansatt').value;
+
+  const marginL = 20;
+  const pageW = 210;
+  let y = 20;
+
+  const line = (text, size = 11, bold = false, color = [0, 0, 0]) => {
+    doc.setFontSize(size);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setTextColor(...color);
+    doc.text(text, marginL, y);
+    y += size * 0.45 + 2;
   };
+
+  const hline = () => {
+    doc.setDrawColor(180, 180, 180);
+    doc.line(marginL, y, pageW - marginL, y);
+    y += 5;
+  };
+
+  const nl = (n = 4) => { y += n; };
+
+  // Title
+  doc.setFillColor(26, 74, 138);
+  doc.rect(0, 0, pageW, 28, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(255, 255, 255);
+  doc.text('DRØFTINGSNOTAT – TURNUS', pageW / 2, 13, { align: 'center' });
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Til behandling med fagforbundet', pageW / 2, 21, { align: 'center' });
+  y = 36;
+
+  // Date right
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Dato: ${today}`, pageW - marginL, y, { align: 'right' });
+  nl(2);
+
+  // Info section
+  line('Informasjon', 12, true, [26, 74, 138]);
+  hline();
+  if (avdeling) { line(`Avdeling: ${avdeling}`, 11); nl(1); }
+  if (leder)    { line(`Avdelingsleder: ${leder}`, 11); nl(1); }
+  if (ansatt)   { line(`Ansatt: ${ansatt}`, 11); nl(1); }
+  nl(3);
+
+  // Summary
+  line('Beregning av stillingsprosent', 12, true, [26, 74, 138]);
+  hline();
+  line(`Antall uker i turnus: ${weeks.length}`, 11);
+  nl(1);
+  line(`Gjennomsnittlig arbeidstid per uke: ${avg.toFixed(2)} timer`, 11);
+  nl(1);
+  line(`100% stilling = ${FULL_WEEK_HOURS} timer/uke`, 11);
+  nl(1);
+  line(`Stillingsprosent: ${pct}%`, 13, true, [37, 99, 235]);
+  nl(5);
+
+  // Week details
+  line('Vaktdetaljer per uke', 12, true, [26, 74, 138]);
+  hline();
+
+  weeks.forEach((week, wi) => {
+    // Check if we need a new page
+    if (y > 240) { doc.addPage(); y = 20; }
+
+    line(`Uke ${wi + 1}`, 11, true);
+    nl(1);
+
+    let weekTotal = 0;
+    DAYS.forEach((dayName, di) => {
+      const dayShifts = week[di];
+      if (dayShifts.length === 0) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`${dayName}: Fri`, marginL + 4, y);
+        y += 6;
+      } else {
+        dayShifts.forEach((sh) => {
+          const net = calcNetHours(sh);
+          weekTotal += net;
+          const lunch = sh.lunchMinutes > 0 ? ` (lunch: ${sh.lunchMinutes} min)` : '';
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(30, 30, 30);
+          doc.text(`${dayName}: ${sh.start} – ${sh.end}${lunch}`, marginL + 4, y);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(37, 99, 235);
+          doc.text(`${net.toFixed(2)} t`, pageW - marginL, y, { align: 'right' });
+          y += 6;
+        });
+      }
+    });
+
+    nl(1);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Sum uke ${wi + 1}: ${weekTotal.toFixed(2)} timer`, marginL + 4, y);
+    y += 6;
+    nl(4);
+  });
+
+  // Signatures – ensure on same page or new page
+  if (y > 220) { doc.addPage(); y = 20; }
+  nl(4);
+  line('Underskrifter', 12, true, [26, 74, 138]);
+  hline();
+
+  const sigLine = (role) => {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.text(role + ':', marginL, y);
+    y += 5;
+    doc.setDrawColor(0, 0, 0);
+    doc.line(marginL, y, marginL + 80, y);
+    doc.text('Dato:', marginL + 85, y - 1);
+    doc.line(marginL + 95, y, marginL + 125, y);
+    y += 10;
+  };
+
+  sigLine('Avdelingsleder');
+  sigLine('Tillitsvalgt / Fagforbundet');
+  sigLine('Ansatt');
+
+  return doc;
 }
 
-// ---- PDF download ----
-
-async function downloadPDF() {
-  const btn = document.getElementById('btn-download');
-  btn.disabled = true;
-  btn.textContent = 'Genererer...';
+function downloadPDF() {
   try {
-    const payload = buildPayload();
-    const res = await fetch('/api/generate-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error('Feil ved generering av PDF');
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'drofting_turnus.pdf';
-    a.click();
-    URL.revokeObjectURL(url);
+    const doc = buildPDF();
+    doc.save('drofting_turnus.pdf');
+    showStatus('success', 'PDF lastet ned.');
   } catch (err) {
-    showStatus('error', 'Kunne ikke laste ned PDF: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Last ned PDF';
+    showStatus('error', 'Feil ved generering av PDF: ' + err.message);
   }
 }
 
-// ---- Send email ----
-
-async function sendEmail() {
-  const email = document.getElementById('email-input').value.trim();
-  if (!email) {
-    showStatus('error', 'Skriv inn en e-postadresse.');
-    return;
-  }
-  const btn = document.getElementById('btn-send');
-  btn.disabled = true;
-  btn.textContent = 'Sender...';
+function openEmail() {
   try {
-    const payload = { ...buildPayload(), email };
-    const res = await fetch('/api/send-email', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (data.success) {
-      showStatus('success', `Drøftingsnotat sendt til ${email}`);
-    } else {
-      throw new Error(data.error || 'Ukjent feil');
-    }
+    const doc = buildPDF();
+    doc.save('drofting_turnus.pdf');
+
+    const avdeling = document.getElementById('meta-avdeling').value || 'Avdeling';
+    const ansatt = document.getElementById('meta-ansatt').value || '';
+    const subject = encodeURIComponent(`Drøftingsnotat turnus – ${avdeling}${ansatt ? ' – ' + ansatt : ''}`);
+    const body = encodeURIComponent(
+      `Hei,\n\nVedlagt finner du drøftingsnotat for turnus.\n\n` +
+      `Avdeling: ${avdeling}\n` +
+      (ansatt ? `Ansatt: ${ansatt}\n` : '') +
+      `\nVennlig hilsen`
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+
+    const hint = document.getElementById('email-hint');
+    hint.style.display = 'block';
+    showStatus('success', 'PDF lastet ned. Legg den ved i e-posten som åpnet seg.');
   } catch (err) {
-    showStatus('error', 'Sending feilet: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Send til e-post';
+    showStatus('error', 'Feil: ' + err.message);
   }
 }
 
 function showStatus(type, msg) {
-  const el = document.getElementById('email-status');
+  const el = document.getElementById('export-status');
   el.className = 'status-msg ' + type;
   el.textContent = msg;
-  setTimeout(() => { el.className = 'status-msg'; }, 6000);
+  setTimeout(() => { el.className = 'status-msg'; }, 8000);
 }
 
-// ---- Init ----
 document.addEventListener('DOMContentLoaded', renderAll);
