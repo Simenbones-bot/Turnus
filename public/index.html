@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turnus Generator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Turnus Generator</h1>
+      <p>Bygg turnus, beregn stillingsprosent og send drøftingsnotat til fagforbundet</p>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Metadata -->
+    <div class="card">
+      <h2>Informasjon</h2>
+      <div class="meta-grid">
+        <div class="field">
+          <label for="meta-avdeling">Avdeling</label>
+          <input id="meta-avdeling" type="text" placeholder="f.eks. Sengepost 3B">
+        </div>
+        <div class="field">
+          <label for="meta-leder">Avdelingsleder</label>
+          <input id="meta-leder" type="text" placeholder="Navn">
+        </div>
+        <div class="field">
+          <label for="meta-ansatt">Ansatt</label>
+          <input id="meta-ansatt" type="text" placeholder="Navn">
+        </div>
+      </div>
+    </div>
+
+    <!-- Week builder -->
+    <div class="card">
+      <h2>Vakter</h2>
+      <div id="week-tabs" class="week-tabs"></div>
+      <div id="days-grid" class="days-grid"></div>
+    </div>
+
+    <!-- Summary -->
+    <div class="card">
+      <h2>Oppsummering</h2>
+      <div class="summary-grid">
+        <div class="summary-stat">
+          <div class="value" id="stat-weeks">–</div>
+          <div class="label">Antall uker</div>
+        </div>
+        <div class="summary-stat">
+          <div class="value" id="stat-avg-hours">–</div>
+          <div class="label">Snitt timer/uke</div>
+        </div>
+        <div class="summary-stat">
+          <div class="value" id="stat-pct">–</div>
+          <div class="label">Stillingsprosent</div>
+        </div>
+      </div>
+
+      <div class="stilling-bar-wrap">
+        <div class="stilling-bar-label">
+          <span>Stillingsprosent (100% = 37,5 t/uke)</span>
+          <span id="stilling-bar-pct">0%</span>
+        </div>
+        <div class="stilling-bar-bg">
+          <div class="stilling-bar-fill" id="stilling-bar-fill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="week-hours-list" id="week-hours-list"></div>
+    </div>
+
+    <!-- Export -->
+    <div class="card">
+      <h2>Send drøftingsnotat</h2>
+      <p style="font-size:0.88rem;color:#4a5568;margin-bottom:16px;">
+        Generer et PDF-drøftingsnotat klart for fagforbundet, med underskriftslinjer.
+        Last ned direkte eller send til e-post.
+      </p>
+      <div class="email-row">
+        <div class="field">
+          <label for="email-input">E-postadresse</label>
+          <input id="email-input" type="email" placeholder="din@epost.no">
+        </div>
+        <button class="btn-primary" id="btn-send" onclick="sendEmail()">Send til e-post</button>
+        <button class="btn-secondary" id="btn-download" onclick="downloadPDF()">Last ned PDF</button>
+      </div>
+      <div id="email-status" class="status-msg"></div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
