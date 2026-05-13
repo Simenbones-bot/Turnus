@@ -1,10 +1,10 @@
 const DAYS = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag', 'Søndag'];
 const FULL_WEEK_HOURS = 37.5;
 
-// Timeline: 06:00 – 23:00
-const TL_START = 6 * 60;   // 360 min
+// Timeline: 03:00 – 23:00
+const TL_START = 3 * 60;   // 180 min
 const TL_END   = 23 * 60;  // 1380 min
-const TL_RANGE = TL_END - TL_START; // 1020 min
+const TL_RANGE = TL_END - TL_START; // 1200 min
 const SNAP = 15; // minute snap grid
 
 let weeks    = [emptyWeek()];
@@ -166,7 +166,7 @@ function renderDays() {
     row.className = 'day-row';
 
     let markersHTML = '';
-    for (let h = 6; h <= 23; h++) {
+    for (let h = 3; h <= 23; h++) {
       const pct = minToPct(h * 60).toFixed(2);
       markersHTML += `<div class="tl-hour" style="left:${pct}%"><span>${h}</span></div>`;
     }
