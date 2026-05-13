@@ -303,6 +303,18 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
   box-shadow: none;
 }
 
+.tl-resize-handle {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  pointer-events: auto;
+  z-index: 10;
+}
+.tl-resize-left  { left: 0; border-radius: 5px 0 0 5px; }
+.tl-resize-right { right: 0; border-radius: 0 5px 5px 0; }
+.tl-resize-handle:hover { background: rgba(255,255,255,0.35); }
+
 .tl-hint {
   font-size: 0.73rem;
   color: #b0bec5;

@@ -215,6 +215,27 @@ function renderTimeline(di) {
     block.style.width = Math.max(0.5, width) + '%';
     block.title = `${shift.start} – ${shift.end}`;
     block.innerHTML = `<span class="tl-block-label">${shift.start}–${shift.end}</span>`;
+
+    const lh = document.createElement('div');
+    lh.className = 'tl-resize-handle tl-resize-left';
+    lh.addEventListener('mousedown', e => startResize(e, di, si, 'start', track, block));
+    lh.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startResize({ clientX: t.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => {} },
+        di, si, 'start', track, block);
+    }, { passive: false });
+
+    const rh = document.createElement('div');
+    rh.className = 'tl-resize-handle tl-resize-right';
+    rh.addEventListener('mousedown', e => startResize(e, di, si, 'end', track, block));
+    rh.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startResize({ clientX: t.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => {} },
+        di, si, 'end', track, block);
+    }, { passive: false });
+
+    block.appendChild(lh);
+    block.appendChild(rh);
     track.appendChild(block);
 
     const lunch = autoLunch(shift);
@@ -298,6 +319,20 @@ function removeShift(di, si) {
   renderSummary();
 }
 
+function startResize(e, di, si, edge, track, block) {
+  e.preventDefault();
+  e.stopPropagation();
+  const shift = weeks[activeWeek][di][si];
+  drag = {
+    mode: 'resize', di, si, edge, track, block,
+    origStart: timeToMinutes(shift.start),
+    origEnd:   timeToMinutes(shift.end),
+    currentMin: edge === 'start'
+      ? timeToMinutes(shift.start)
+      : timeToMinutes(shift.end)
+  };
+}
+
 // ---- Timeline drag (mouse) ----
 
 function getTrackPct(clientX, trackEl) {
@@ -321,6 +356,19 @@ function timelineMouseDown(e, di) {
 
 function handleGlobalMouseMove(e) {
   if (!drag) return;
+  if (drag.mode === 'resize') {
+    const pct = getTrackPct(e.clientX, drag.track);
+    const clamped = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
+    if (drag.edge === 'start') {
+      drag.currentMin = Math.min(clamped, drag.origEnd - SNAP);
+      drag.block.style.left  = minToPct(drag.currentMin) + '%';
+      drag.block.style.width = (minToPct(drag.origEnd) - minToPct(drag.currentMin)) + '%';
+    } else {
+      drag.currentMin = Math.max(clamped, drag.origStart + SNAP);
+      drag.block.style.width = (minToPct(drag.currentMin) - minToPct(drag.origStart)) + '%';
+    }
+    return;
+  }
   const pct    = getTrackPct(e.clientX, drag.track);
   drag.endMin  = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
   updateDragPreview();
@@ -328,6 +376,16 @@ function handleGlobalMouseMove(e) {
 
 function handleGlobalMouseUp() {
   if (!drag) return;
+  if (drag.mode === 'resize') {
+    const { di, si, edge, currentMin } = drag;
+    const shift = weeks[activeWeek][di][si];
+    if (edge === 'start') shift.start = minToTime(currentMin);
+    else                  shift.end   = minToTime(currentMin);
+    drag = null;
+    renderTimeline(di);
+    renderSummary();
+    return;
+  }
   const startMin = Math.min(drag.startMin, drag.endMin);
   const endMin   = Math.max(drag.startMin, drag.endMin);
 
