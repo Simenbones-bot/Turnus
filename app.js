@@ -1,15 +1,26 @@
 const DAYS = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag', 'Søndag'];
 const FULL_WEEK_HOURS = 37.5;
 
+// Timeline: 06:00 – 23:00
+const TL_START = 6 * 60;   // 360 min
+const TL_END   = 23 * 60;  // 1380 min
+const TL_RANGE = TL_END - TL_START; // 1020 min
+const SNAP = 15; // minute snap grid
+
 let weeks = [emptyWeek()];
 let activeWeek = 0;
+let drag = null;
 
 function emptyWeek() {
   return Array.from({ length: 7 }, () => []);
 }
 
-function defaultShift() {
-  return { start: '07:00', end: '15:00', lunchMinutes: 30 };
+// ---- Time helpers ----
+
+function minToTime(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 function timeToMinutes(t) {
@@ -18,12 +29,23 @@ function timeToMinutes(t) {
   return h * 60 + m;
 }
 
+function snapMin(min) {
+  return Math.round(min / SNAP) * SNAP;
+}
+
+function minToPct(min) {
+  return ((min - TL_START) / TL_RANGE) * 100;
+}
+
+function pctToMin(pct) {
+  return TL_START + (pct / 100) * TL_RANGE;
+}
+
 function calcNetHours(shift) {
   const start = timeToMinutes(shift.start);
-  const end = timeToMinutes(shift.end);
+  const end   = timeToMinutes(shift.end);
   if (end <= start) return 0;
-  const gross = end - start;
-  return Math.max(0, gross - (shift.lunchMinutes || 0)) / 60;
+  return Math.max(0, (end - start) - (shift.lunchMinutes || 0)) / 60;
 }
 
 function weekTotalHours(weekIdx) {
@@ -35,6 +57,16 @@ function averageHours() {
   if (weeks.length === 0) return 0;
   return weeks.reduce((s, _, i) => s + weekTotalHours(i), 0) / weeks.length;
 }
+
+// ---- Type turnus ----
+
+function onTurnusTypeChange() {
+  const val = document.getElementById('meta-type-turnus').value;
+  document.getElementById('box-personlig').style.display = val === 'personlig' ? 'block' : 'none';
+  document.getElementById('box-sjaforer').style.display  = val === 'flerere'   ? 'block' : 'none';
+}
+
+// ---- Render week tabs ----
 
 function renderWeekTabs() {
   const wrap = document.getElementById('week-tabs');
@@ -61,59 +93,84 @@ function renderWeekTabs() {
   wrap.appendChild(addBtn);
 }
 
+// ---- Render days with timeline ----
+
 function renderDays() {
   const grid = document.getElementById('days-grid');
   grid.innerHTML = '';
-  const week = weeks[activeWeek];
 
   DAYS.forEach((dayName, di) => {
-    const dayShifts = week[di];
-    const totalH = dayShifts.reduce((s, sh) => s + calcNetHours(sh), 0);
-    const summaryText = dayShifts.length === 0
-      ? 'Fri'
-      : dayShifts.map(sh => `${sh.start}–${sh.end}${sh.lunchMinutes ? ' (L)' : ''}`).join(', ') + `  →  ${totalH.toFixed(2)} t`;
-
     const row = document.createElement('div');
     row.className = 'day-row';
+
+    let markersHTML = '';
+    for (let h = 6; h <= 23; h++) {
+      const pct = minToPct(h * 60).toFixed(2);
+      markersHTML += `<div class="tl-hour" style="left:${pct}%"><span>${h}</span></div>`;
+    }
+
     row.innerHTML = `
-      <div class="day-header" onclick="toggleDay(${di})">
+      <div class="day-header">
         <span class="day-name">${dayName}</span>
-        <span class="day-summary" id="day-summary-${di}">${summaryText}</span>
-        <span class="day-toggle">▼ Rediger</span>
+        <span class="day-summary" id="day-summary-${di}">Fri</span>
       </div>
-      <div class="day-body" id="day-body-${di}">
-        <div class="shifts-list" id="shifts-list-${di}"></div>
-        <button class="btn-add-shift" onclick="addShift(${di})">+ Legg til vakt</button>
+      <div class="day-body">
+        <div class="tl-wrap">
+          <div class="tl-hours-row">${markersHTML}</div>
+          <div class="tl-track" id="tl-track-${di}"
+            onmousedown="timelineMouseDown(event,${di})"
+            ontouchstart="timelineTouchStart(event,${di})">
+          </div>
+        </div>
+        <p class="tl-hint">Klikk og dra på tidslinjen for å opprette vakt</p>
+        <div class="shift-details-list" id="shift-details-${di}"></div>
       </div>
     `;
+
     grid.appendChild(row);
-    renderShifts(di);
+    renderTimeline(di);
   });
 }
 
-function renderShifts(di) {
-  const list = document.getElementById(`shifts-list-${di}`);
-  if (!list) return;
-  list.innerHTML = '';
+function renderTimeline(di) {
+  const track   = document.getElementById(`tl-track-${di}`);
+  const details = document.getElementById(`shift-details-${di}`);
+  if (!track || !details) return;
+
+  track.querySelectorAll('.tl-block:not(.preview)').forEach(el => el.remove());
+  details.innerHTML = '';
+
   weeks[activeWeek][di].forEach((shift, si) => {
-    const net = calcNetHours(shift);
-    const row = document.createElement('div');
-    row.className = 'shift-row';
-    row.innerHTML = `
-      <label>Fra</label>
-      <input type="time" value="${shift.start}" onchange="updateShift(${di},${si},'start',this.value)">
-      <label>Til</label>
-      <input type="time" value="${shift.end}" onchange="updateShift(${di},${si},'end',this.value)">
-      <div class="lunch-group">
-        <label>Lunch (min)</label>
-        <input type="number" min="0" max="120" step="5" value="${shift.lunchMinutes}"
-          onchange="updateShift(${di},${si},'lunchMinutes',parseInt(this.value)||0)">
-      </div>
-      <span class="shift-hours" id="shift-hours-${di}-${si}">${net.toFixed(2)} t</span>
-      <button class="btn-remove-shift" title="Fjern vakt" onclick="removeShift(${di},${si})">✕</button>
+    const startMin = timeToMinutes(shift.start);
+    const endMin   = timeToMinutes(shift.end);
+    const left  = minToPct(startMin);
+    const width = minToPct(endMin) - minToPct(startMin);
+    const net   = calcNetHours(shift);
+
+    const block = document.createElement('div');
+    block.className = 'tl-block';
+    block.style.left  = Math.max(0, left) + '%';
+    block.style.width = Math.max(0.5, width) + '%';
+    block.title = `${shift.start} – ${shift.end}`;
+    block.innerHTML = `<span class="tl-block-label">${shift.start}–${shift.end}</span>`;
+    track.appendChild(block);
+
+    const detail = document.createElement('div');
+    detail.className = 'shift-detail-row';
+    detail.innerHTML = `
+      <span class="sd-time">${shift.start} – ${shift.end}</span>
+      <span class="sd-sep">|</span>
+      <label class="sd-label">Lunsj:</label>
+      <input class="sd-lunch" type="number" min="0" max="120" step="5" value="${shift.lunchMinutes}"
+        onchange="updateShift(${di},${si},'lunchMinutes',parseInt(this.value)||0)">
+      <span class="sd-label">min</span>
+      <span class="sd-net">${net.toFixed(2)} t</span>
+      <button class="sd-delete" onclick="removeShift(${di},${si})" title="Slett vakt">✕</button>
     `;
-    list.appendChild(row);
+    details.appendChild(detail);
   });
+
+  updateDaySummary(di);
 }
 
 function updateDaySummary(di) {
@@ -123,16 +180,16 @@ function updateDaySummary(di) {
   if (!el) return;
   el.textContent = dayShifts.length === 0
     ? 'Fri'
-    : dayShifts.map(sh => `${sh.start}–${sh.end}${sh.lunchMinutes ? ' (L)' : ''}`).join(', ') + `  →  ${totalH.toFixed(2)} t`;
+    : `${dayShifts.length} vakt${dayShifts.length > 1 ? 'er' : ''} – ${totalH.toFixed(2)} t`;
 }
 
 function renderSummary() {
   const avg = averageHours();
   const pct = (avg / FULL_WEEK_HOURS) * 100;
 
-  document.getElementById('stat-weeks').textContent = weeks.length;
+  document.getElementById('stat-weeks').textContent    = weeks.length;
   document.getElementById('stat-avg-hours').textContent = avg.toFixed(2) + ' t';
-  document.getElementById('stat-pct').textContent = pct.toFixed(1) + '%';
+  document.getElementById('stat-pct').textContent       = pct.toFixed(1) + '%';
 
   const bar = document.getElementById('stilling-bar-fill');
   bar.style.width = Math.min(pct, 100) + '%';
@@ -156,9 +213,7 @@ function renderAll() {
   renderSummary();
 }
 
-function toggleDay(di) {
-  document.getElementById(`day-body-${di}`).classList.toggle('open');
-}
+// ---- Week/shift actions ----
 
 function addWeek() {
   weeks.push(emptyWeek());
@@ -172,43 +227,114 @@ function deleteWeek(i) {
   renderAll();
 }
 
-function addShift(di) {
-  weeks[activeWeek][di].push(defaultShift());
-  renderShifts(di);
-  updateDaySummary(di);
-  renderSummary();
-  document.getElementById(`day-body-${di}`).classList.add('open');
-}
-
 function removeShift(di, si) {
   weeks[activeWeek][di].splice(si, 1);
-  renderShifts(di);
-  updateDaySummary(di);
+  renderTimeline(di);
   renderSummary();
 }
 
 function updateShift(di, si, field, value) {
   weeks[activeWeek][di][si][field] = value;
-  const net = calcNetHours(weeks[activeWeek][di][si]);
-  const el = document.getElementById(`shift-hours-${di}-${si}`);
-  if (el) el.textContent = net.toFixed(2) + ' t';
-  updateDaySummary(di);
+  renderTimeline(di);
   renderSummary();
 }
+
+// ---- Timeline drag (mouse) ----
+
+function getTrackPct(clientX, trackEl) {
+  const rect = trackEl.getBoundingClientRect();
+  return Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100));
+}
+
+function timelineMouseDown(e, di) {
+  const track = e.currentTarget;
+  const pct   = getTrackPct(e.clientX, track);
+  const startMin = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
+
+  const preview = document.createElement('div');
+  preview.className = 'tl-block preview';
+  track.appendChild(preview);
+
+  drag = { di, track, preview, startMin, endMin: startMin };
+  updateDragPreview();
+  e.preventDefault();
+}
+
+function handleGlobalMouseMove(e) {
+  if (!drag) return;
+  const pct    = getTrackPct(e.clientX, drag.track);
+  drag.endMin  = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
+  updateDragPreview();
+}
+
+function handleGlobalMouseUp() {
+  if (!drag) return;
+  const startMin = Math.min(drag.startMin, drag.endMin);
+  const endMin   = Math.max(drag.startMin, drag.endMin);
+
+  drag.preview.remove();
+
+  if (endMin - startMin >= SNAP) {
+    weeks[activeWeek][drag.di].push({
+      start: minToTime(startMin),
+      end:   minToTime(endMin),
+      lunchMinutes: 0
+    });
+    renderTimeline(drag.di);
+    renderSummary();
+  }
+  drag = null;
+}
+
+function updateDragPreview() {
+  if (!drag) return;
+  const s = Math.min(drag.startMin, drag.endMin);
+  const e = Math.max(drag.startMin, drag.endMin);
+  const left  = minToPct(s);
+  const width = minToPct(e) - minToPct(s);
+  drag.preview.style.left  = left + '%';
+  drag.preview.style.width = Math.max(0, width) + '%';
+  drag.preview.textContent = e - s >= SNAP ? `${minToTime(s)} – ${minToTime(e)}` : '';
+}
+
+// ---- Timeline drag (touch) ----
+
+function timelineTouchStart(e, di) {
+  const touch = e.touches[0];
+  timelineMouseDown({ currentTarget: e.currentTarget, clientX: touch.clientX, preventDefault: () => e.preventDefault() }, di);
+}
+
+function handleGlobalTouchMove(e) {
+  if (!drag) return;
+  e.preventDefault();
+  handleGlobalMouseMove({ clientX: e.touches[0].clientX });
+}
+
+function handleGlobalTouchEnd() {
+  handleGlobalMouseUp();
+}
+
+// ---- PDF generation ----
 
 function buildPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
-  const avg = averageHours();
-  const pct = ((avg / FULL_WEEK_HOURS) * 100).toFixed(1);
-  const today = new Date().toLocaleDateString('nb-NO');
-  const avdeling = document.getElementById('meta-avdeling').value;
-  const leder = document.getElementById('meta-leder').value;
-  const ansatt = document.getElementById('meta-ansatt').value;
+  const avg       = averageHours();
+  const pct       = ((avg / FULL_WEEK_HOURS) * 100).toFixed(1);
+  const today     = new Date().toLocaleDateString('nb-NO');
+  const avdeling  = document.getElementById('meta-avdeling').value;
+  const leder     = document.getElementById('meta-leder').value;
+  const typeVal   = document.getElementById('meta-type-turnus').value;
+  const typeLabel = typeVal === 'personlig' ? 'Personlig turnus'
+                  : typeVal === 'flerere'   ? 'Turnus for flere sjåfører' : '';
+  const navn           = document.getElementById('meta-navn').value;
+  const antallSjaforer = document.getElementById('meta-antall-sjaforer').value;
+  const arsak          = document.getElementById('meta-arsak').value;
+  const kommentar      = document.getElementById('meta-kommentar').value;
 
   const marginL = 20;
-  const pageW = 210;
+  const pageW   = 210;
   let y = 20;
 
   const line = (text, size = 11, bold = false, color = [0, 0, 0]) => {
@@ -219,6 +345,19 @@ function buildPDF() {
     y += size * 0.45 + 2;
   };
 
+  const multiLine = (text, size = 10) => {
+    doc.setFontSize(size);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    const lines = doc.splitTextToSize(text, pageW - marginL * 2);
+    lines.forEach(l => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.text(l, marginL, y);
+      y += size * 0.45 + 1.5;
+    });
+    y += 2;
+  };
+
   const hline = () => {
     doc.setDrawColor(180, 180, 180);
     doc.line(marginL, y, pageW - marginL, y);
@@ -226,6 +365,10 @@ function buildPDF() {
   };
 
   const nl = (n = 4) => { y += n; };
+
+  const checkPage = (needed = 30) => {
+    if (y + needed > 275) { doc.addPage(); y = 20; }
+  };
 
   doc.setFillColor(26, 74, 138);
   doc.rect(0, 0, pageW, 28, 'F');
@@ -245,34 +388,36 @@ function buildPDF() {
 
   line('Informasjon', 12, true, [26, 74, 138]);
   hline();
-  if (avdeling) { line(`Avdeling: ${avdeling}`, 11); nl(1); }
-  if (leder)    { line(`Avdelingsleder: ${leder}`, 11); nl(1); }
-  if (ansatt)   { line(`Ansatt: ${ansatt}`, 11); nl(1); }
+  if (avdeling)       { line(`Avdeling: ${avdeling}`, 11); nl(1); }
+  if (leder)          { line(`Avdelingsleder: ${leder}`, 11); nl(1); }
+  if (typeLabel)      { line(`Type turnus: ${typeLabel}`, 11); nl(1); }
+  if (navn)           { line(`Navn: ${navn}`, 11); nl(1); }
+  if (antallSjaforer) { line(`Antall sjåfører: ${antallSjaforer}`, 11); nl(1); }
   nl(3);
 
+  checkPage(40);
   line('Beregning av stillingsprosent', 12, true, [26, 74, 138]);
   hline();
-  line(`Antall uker i turnus: ${weeks.length}`, 11);
-  nl(1);
-  line(`Gjennomsnittlig arbeidstid per uke: ${avg.toFixed(2)} timer`, 11);
-  nl(1);
-  line(`100% stilling = ${FULL_WEEK_HOURS} timer/uke`, 11);
-  nl(1);
+  line(`Antall uker i turnus: ${weeks.length}`, 11); nl(1);
+  line(`Gjennomsnittlig arbeidstid per uke: ${avg.toFixed(2)} timer`, 11); nl(1);
+  line(`100% stilling = ${FULL_WEEK_HOURS} timer/uke`, 11); nl(1);
   line(`Stillingsprosent: ${pct}%`, 13, true, [37, 99, 235]);
   nl(5);
 
+  checkPage(30);
   line('Vaktdetaljer per uke', 12, true, [26, 74, 138]);
   hline();
 
   weeks.forEach((week, wi) => {
-    if (y > 240) { doc.addPage(); y = 20; }
-
+    checkPage(60);
     line(`Uke ${wi + 1}`, 11, true);
     nl(1);
 
     let weekTotal = 0;
     DAYS.forEach((dayName, di) => {
       const dayShifts = week[di];
+      if (y > 265) { doc.addPage(); y = 20; }
+
       if (dayShifts.length === 0) {
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
@@ -283,7 +428,7 @@ function buildPDF() {
         dayShifts.forEach((sh) => {
           const net = calcNetHours(sh);
           weekTotal += net;
-          const lunch = sh.lunchMinutes > 0 ? ` (lunch: ${sh.lunchMinutes} min)` : '';
+          const lunch = sh.lunchMinutes > 0 ? ` (lunsj: ${sh.lunchMinutes} min)` : '';
           doc.setFontSize(10);
           doc.setFont('helvetica', 'normal');
           doc.setTextColor(30, 30, 30);
@@ -305,12 +450,31 @@ function buildPDF() {
     nl(4);
   });
 
-  if (y > 220) { doc.addPage(); y = 20; }
+  if (arsak || kommentar) {
+    checkPage(40);
+    line('Tilleggsinformasjon', 12, true, [26, 74, 138]);
+    hline();
+    if (arsak) {
+      line('Årsak til turnusendring:', 11, true);
+      nl(1);
+      multiLine(arsak);
+      nl(2);
+    }
+    if (kommentar) {
+      line('Annen kommentar:', 11, true);
+      nl(1);
+      multiLine(kommentar);
+      nl(2);
+    }
+  }
+
+  checkPage(50);
   nl(4);
   line('Underskrifter', 12, true, [26, 74, 138]);
   hline();
 
   const sigLine = (role) => {
+    if (y > 265) { doc.addPage(); y = 20; }
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(0, 0, 0);
@@ -332,8 +496,7 @@ function buildPDF() {
 
 function downloadPDF() {
   try {
-    const doc = buildPDF();
-    doc.save('drofting_turnus.pdf');
+    buildPDF().save('drofting_turnus.pdf');
     showStatus('success', 'PDF lastet ned.');
   } catch (err) {
     showStatus('error', 'Feil ved generering av PDF: ' + err.message);
@@ -342,22 +505,17 @@ function downloadPDF() {
 
 function openEmail() {
   try {
-    const doc = buildPDF();
-    doc.save('drofting_turnus.pdf');
-
+    buildPDF().save('drofting_turnus.pdf');
     const avdeling = document.getElementById('meta-avdeling').value || 'Avdeling';
-    const ansatt = document.getElementById('meta-ansatt').value || '';
-    const subject = encodeURIComponent(`Drøftingsnotat turnus – ${avdeling}${ansatt ? ' – ' + ansatt : ''}`);
-    const body = encodeURIComponent(
-      `Hei,\n\nVedlagt finner du drøftingsnotat for turnus.\n\n` +
-      `Avdeling: ${avdeling}\n` +
-      (ansatt ? `Ansatt: ${ansatt}\n` : '') +
+    const navn     = document.getElementById('meta-navn').value || '';
+    const subject  = encodeURIComponent(`Drøftingsnotat turnus – ${avdeling}${navn ? ' – ' + navn : ''}`);
+    const body     = encodeURIComponent(
+      `Hei,\n\nVedlagt finner du drøftingsnotat for turnus.\n\nAvdeling: ${avdeling}\n` +
+      (navn ? `Navn: ${navn}\n` : '') +
       `\nVennlig hilsen`
     );
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
-
-    const hint = document.getElementById('email-hint');
-    hint.style.display = 'block';
+    document.getElementById('email-hint').style.display = 'block';
     showStatus('success', 'PDF lastet ned. Legg den ved i e-posten som åpnet seg.');
   } catch (err) {
     showStatus('error', 'Feil: ' + err.message);
@@ -371,4 +529,10 @@ function showStatus(type, msg) {
   setTimeout(() => { el.className = 'status-msg'; }, 8000);
 }
 
-document.addEventListener('DOMContentLoaded', renderAll);
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('mousemove', handleGlobalMouseMove);
+  document.addEventListener('mouseup',   handleGlobalMouseUp);
+  document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+  document.addEventListener('touchend',  handleGlobalTouchEnd);
+  renderAll();
+});

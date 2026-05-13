@@ -17,33 +17,62 @@
 
   <div class="container">
 
-    <!-- Metadata -->
+    <!-- Informasjon -->
     <div class="card">
       <h2>Informasjon</h2>
       <div class="meta-grid">
         <div class="field">
           <label for="meta-avdeling">Avdeling</label>
-          <input id="meta-avdeling" type="text" placeholder="f.eks. Sengepost 3B">
+          <input id="meta-avdeling" type="text" placeholder="Avdelingsnummer">
         </div>
         <div class="field">
           <label for="meta-leder">Avdelingsleder</label>
           <input id="meta-leder" type="text" placeholder="Navn">
         </div>
         <div class="field">
-          <label for="meta-ansatt">Ansatt</label>
-          <input id="meta-ansatt" type="text" placeholder="Navn">
+          <label for="meta-type-turnus">Type turnus</label>
+          <select id="meta-type-turnus" onchange="onTurnusTypeChange()">
+            <option value="">– Velg type –</option>
+            <option value="personlig">Personlig turnus</option>
+            <option value="flerere">Turnus for flere sjåfører</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="box-personlig" class="dynamic-box" style="display:none;">
+        <div class="field" style="max-width:320px;">
+          <label for="meta-navn">Navn</label>
+          <input id="meta-navn" type="text" placeholder="Fullt navn">
+        </div>
+      </div>
+
+      <div id="box-sjaforer" class="dynamic-box" style="display:none;">
+        <div class="field" style="max-width:200px;">
+          <label for="meta-antall-sjaforer">Antall sjåfører</label>
+          <input id="meta-antall-sjaforer" type="number" min="1" placeholder="Antall">
+        </div>
+      </div>
+
+      <div class="textarea-grid">
+        <div class="field">
+          <label for="meta-arsak">Årsak til turnusendring</label>
+          <textarea id="meta-arsak" rows="3" placeholder="Beskriv årsaken til turnusendringen..."></textarea>
+        </div>
+        <div class="field">
+          <label for="meta-kommentar">Annen kommentar</label>
+          <textarea id="meta-kommentar" rows="3" placeholder="Andre kommentarer som skal med i drøftingsnotatet..."></textarea>
         </div>
       </div>
     </div>
 
-    <!-- Week builder -->
+    <!-- Vakter -->
     <div class="card">
       <h2>Vakter</h2>
       <div id="week-tabs" class="week-tabs"></div>
       <div id="days-grid" class="days-grid"></div>
     </div>
 
-    <!-- Summary -->
+    <!-- Oppsummering -->
     <div class="card">
       <h2>Oppsummering</h2>
       <div class="summary-grid">
@@ -74,7 +103,7 @@
       <div class="week-hours-list" id="week-hours-list"></div>
     </div>
 
-    <!-- Export -->
+    <!-- Eksport -->
     <div class="card">
       <h2>Last ned drøftingsnotat</h2>
       <p style="font-size:0.88rem;color:#4a5568;margin-bottom:16px;">
@@ -82,12 +111,8 @@
         leder, tillitsvalgt og ansatt.
       </p>
       <div class="export-row">
-        <button class="btn-primary" id="btn-download" onclick="downloadPDF()">
-          Last ned PDF
-        </button>
-        <button class="btn-secondary" id="btn-email" onclick="openEmail()">
-          Send via e-post
-        </button>
+        <button class="btn-primary" id="btn-download" onclick="downloadPDF()">Last ned PDF</button>
+        <button class="btn-secondary" id="btn-email" onclick="openEmail()">Send via e-post</button>
       </div>
       <div id="export-status" class="status-msg"></div>
       <p class="email-hint" id="email-hint" style="display:none;">
