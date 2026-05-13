@@ -1,0 +1,691 @@
+const DAYS = ['Mandag', 'Tirsdag', 'Onsdag', 'Torsdag', 'Fredag', 'Lørdag', 'Søndag'];
+const FULL_WEEK_HOURS = 37.5;
+
+// Timeline: 03:00 – 23:00
+const TL_START = 3 * 60;   // 180 min
+const TL_END   = 23 * 60;  // 1380 min
+const TL_RANGE = TL_END - TL_START; // 1200 min
+const SNAP = 15; // minute snap grid
+
+let weeks    = [emptyWeek()];
+let weekMeta = [{ num: null, year: new Date().getFullYear() }];
+let activeWeek = 0;
+let drag = null;
+let editingWeekIdx = null;
+
+function emptyWeek() {
+  return Array.from({ length: 7 }, () => []);
+}
+
+// ---- Time helpers ----
+
+function minToTime(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function timeToMinutes(t) {
+  if (!t) return 0;
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function snapMin(min) {
+  return Math.round(min / SNAP) * SNAP;
+}
+
+function minToPct(min) {
+  return ((min - TL_START) / TL_RANGE) * 100;
+}
+
+function pctToMin(pct) {
+  return TL_START + (pct / 100) * TL_RANGE;
+}
+
+const AUTO_LUNCH_THRESHOLD = 5.5 * 60; // 330 min gross
+const AUTO_LUNCH_MINUTES   = 30;
+
+function grossMinutes(shift) {
+  const start = timeToMinutes(shift.start);
+  const end   = timeToMinutes(shift.end);
+  return end > start ? end - start : 0;
+}
+
+function autoLunch(shift) {
+  return grossMinutes(shift) > AUTO_LUNCH_THRESHOLD ? AUTO_LUNCH_MINUTES : 0;
+}
+
+function calcNetHours(shift) {
+  const gross = grossMinutes(shift);
+  if (gross <= 0) return 0;
+  return Math.max(0, gross - autoLunch(shift)) / 60;
+}
+
+function weekTotalHours(weekIdx) {
+  return weeks[weekIdx].reduce((sum, dayShifts) =>
+    sum + dayShifts.reduce((s, sh) => s + calcNetHours(sh), 0), 0);
+}
+
+function averageHours() {
+  if (weeks.length === 0) return 0;
+  return weeks.reduce((s, _, i) => s + weekTotalHours(i), 0) / weeks.length;
+}
+
+// ---- Week label helpers ----
+
+function isoWeekDates(weekNum, year) {
+  const jan4 = new Date(year, 0, 4);
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (weekNum - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { monday, sunday };
+}
+
+function weekLabel(i) {
+  const m = weekMeta[i];
+  if (!m || !m.num) return `Uke ${i + 1}`;
+  const { monday, sunday } = isoWeekDates(m.num, m.year);
+  const fmt = d => d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+  return `Uke ${m.num}  ·  ${fmt(monday)}–${fmt(sunday)}`;
+}
+
+// ---- Type turnus ----
+
+function onTurnusTypeChange() {
+  const val = document.getElementById('meta-type-turnus').value;
+  document.getElementById('box-personlig').style.display = val === 'personlig' ? 'block' : 'none';
+  document.getElementById('box-sjaforer').style.display  = val === 'flerere'   ? 'block' : 'none';
+}
+
+// ---- Week popover ----
+
+function openWeekPopover(i) {
+  editingWeekIdx = i;
+  const pop = document.getElementById('week-popover');
+  document.getElementById('pop-weeknum').value = weekMeta[i].num || '';
+  document.getElementById('pop-year').value    = weekMeta[i].year || new Date().getFullYear();
+  pop.style.display = 'flex';
+  document.getElementById('pop-weeknum').focus();
+}
+
+function saveWeekMeta() {
+  if (editingWeekIdx === null) return;
+  const num  = parseInt(document.getElementById('pop-weeknum').value, 10);
+  const year = parseInt(document.getElementById('pop-year').value, 10);
+  if (num >= 1 && num <= 53 && year >= 2020 && year <= 2040) {
+    weekMeta[editingWeekIdx] = { num, year };
+  }
+  closeWeekPopover();
+  renderAll();
+}
+
+function closeWeekPopover() {
+  document.getElementById('week-popover').style.display = 'none';
+  editingWeekIdx = null;
+}
+
+// ---- Render week tabs ----
+
+function renderWeekTabs() {
+  const wrap = document.getElementById('week-tabs');
+  wrap.innerHTML = '';
+  weeks.forEach((_, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'week-tab' + (i === activeWeek ? ' active' : '');
+    tab.textContent = weekLabel(i);
+    tab.title = 'Klikk for å bytte uke · Dobbeltklikk for å sette ukenummer';
+    tab.onclick = () => { activeWeek = i; renderAll(); };
+    tab.ondblclick = (e) => { e.stopPropagation(); openWeekPopover(i); };
+    wrap.appendChild(tab);
+    if (weeks.length > 1) {
+      const del = document.createElement('button');
+      del.className = 'week-tab delete-week';
+      del.title = `Slett uke ${i + 1}`;
+      del.textContent = '✕';
+      del.onclick = (e) => { e.stopPropagation(); deleteWeek(i); };
+      wrap.appendChild(del);
+    }
+  });
+  const addBtn = document.createElement('button');
+  addBtn.id = 'add-week-btn';
+  addBtn.textContent = '+ Legg til uke';
+  addBtn.onclick = addWeek;
+  wrap.appendChild(addBtn);
+}
+
+// ---- Render days with timeline ----
+
+function renderDays() {
+  const grid = document.getElementById('days-grid');
+  grid.innerHTML = '';
+
+  DAYS.forEach((dayName, di) => {
+    const row = document.createElement('div');
+    row.className = 'day-row';
+
+    let markersHTML = '';
+    for (let h = 3; h <= 23; h++) {
+      const pct = minToPct(h * 60).toFixed(2);
+      markersHTML += `<div class="tl-hour" style="left:${pct}%"><span>${h}</span></div>`;
+    }
+
+    row.innerHTML = `
+      <div class="day-header">
+        <span class="day-name">${dayName}</span>
+        <span class="day-summary" id="day-summary-${di}">Fri</span>
+      </div>
+      <div class="day-body">
+        <div class="tl-wrap">
+          <div class="tl-hours-row">${markersHTML}</div>
+          <div class="tl-track" id="tl-track-${di}"
+            onmousedown="timelineMouseDown(event,${di})"
+            ontouchstart="timelineTouchStart(event,${di})">
+          </div>
+        </div>
+        <p class="tl-hint">Klikk og dra på tidslinjen for å opprette vakt</p>
+        <div class="shift-details-list" id="shift-details-${di}"></div>
+      </div>
+    `;
+
+    grid.appendChild(row);
+    renderTimeline(di);
+  });
+}
+
+function renderTimeline(di) {
+  const track   = document.getElementById(`tl-track-${di}`);
+  const details = document.getElementById(`shift-details-${di}`);
+  if (!track || !details) return;
+
+  track.querySelectorAll('.tl-block:not(.preview)').forEach(el => el.remove());
+  details.innerHTML = '';
+
+  weeks[activeWeek][di].forEach((shift, si) => {
+    const startMin = timeToMinutes(shift.start);
+    const endMin   = timeToMinutes(shift.end);
+    const left  = minToPct(startMin);
+    const width = minToPct(endMin) - minToPct(startMin);
+    const net   = calcNetHours(shift);
+
+    const block = document.createElement('div');
+    block.className = 'tl-block';
+    block.style.left  = Math.max(0, left) + '%';
+    block.style.width = Math.max(0.5, width) + '%';
+    block.title = `${shift.start} – ${shift.end}`;
+    block.innerHTML = `<span class="tl-block-label">${shift.start}–${shift.end}</span>`;
+
+    const lh = document.createElement('div');
+    lh.className = 'tl-resize-handle tl-resize-left';
+    lh.addEventListener('mousedown', e => startResize(e, di, si, 'start', track, block));
+    lh.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startResize({ clientX: t.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => {} },
+        di, si, 'start', track, block);
+    }, { passive: false });
+
+    const rh = document.createElement('div');
+    rh.className = 'tl-resize-handle tl-resize-right';
+    rh.addEventListener('mousedown', e => startResize(e, di, si, 'end', track, block));
+    rh.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startResize({ clientX: t.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => {} },
+        di, si, 'end', track, block);
+    }, { passive: false });
+
+    block.appendChild(lh);
+    block.appendChild(rh);
+    track.appendChild(block);
+
+    const lunch = autoLunch(shift);
+    const lunchTag = lunch > 0
+      ? `<span class="sd-lunch-auto">🍽 ${lunch} min lunsj inkl.</span>`
+      : '';
+
+    const detail = document.createElement('div');
+    detail.className = 'shift-detail-row';
+    detail.innerHTML = `
+      <span class="sd-time">${shift.start} – ${shift.end}</span>
+      ${lunchTag}
+      <span class="sd-net">${net.toFixed(2)} t</span>
+      <button class="sd-delete" onclick="removeShift(${di},${si})" title="Slett vakt">✕</button>
+    `;
+    details.appendChild(detail);
+  });
+
+  updateDaySummary(di);
+}
+
+function updateDaySummary(di) {
+  const dayShifts = weeks[activeWeek][di];
+  const totalH = dayShifts.reduce((s, sh) => s + calcNetHours(sh), 0);
+  const el = document.getElementById(`day-summary-${di}`);
+  if (!el) return;
+  el.textContent = dayShifts.length === 0
+    ? 'Fri'
+    : `${dayShifts.length} vakt${dayShifts.length > 1 ? 'er' : ''} – ${totalH.toFixed(2)} t`;
+}
+
+function renderSummary() {
+  const avg = averageHours();
+  const pct = (avg / FULL_WEEK_HOURS) * 100;
+
+  document.getElementById('stat-weeks').textContent    = weeks.length;
+  document.getElementById('stat-avg-hours').textContent = avg.toFixed(2) + ' t';
+  document.getElementById('stat-pct').textContent       = pct.toFixed(1) + '%';
+
+  const bar = document.getElementById('stilling-bar-fill');
+  bar.style.width = Math.min(pct, 100) + '%';
+  document.getElementById('stilling-bar-pct').textContent = pct.toFixed(1) + '%';
+
+  const list = document.getElementById('week-hours-list');
+  list.innerHTML = '';
+  weeks.forEach((_, i) => {
+    const h = weekTotalHours(i);
+    const p = ((h / FULL_WEEK_HOURS) * 100).toFixed(1);
+    const item = document.createElement('div');
+    item.className = 'week-hours-item';
+    item.innerHTML = `<span>${weekLabel(i)}</span><span>${h.toFixed(2)} t &nbsp;(${p}%)</span>`;
+    list.appendChild(item);
+  });
+}
+
+function renderAll() {
+  renderWeekTabs();
+  renderDays();
+  renderSummary();
+}
+
+// ---- Week/shift actions ----
+
+function addWeek() {
+  weeks.push(emptyWeek());
+  weekMeta.push({ num: null, year: new Date().getFullYear() });
+  activeWeek = weeks.length - 1;
+  renderAll();
+}
+
+function deleteWeek(i) {
+  weeks.splice(i, 1);
+  weekMeta.splice(i, 1);
+  if (activeWeek >= weeks.length) activeWeek = weeks.length - 1;
+  renderAll();
+}
+
+function removeShift(di, si) {
+  weeks[activeWeek][di].splice(si, 1);
+  renderTimeline(di);
+  renderSummary();
+}
+
+function startResize(e, di, si, edge, track, block) {
+  e.preventDefault();
+  e.stopPropagation();
+  const shift = weeks[activeWeek][di][si];
+  drag = {
+    mode: 'resize', di, si, edge, track, block,
+    origStart: timeToMinutes(shift.start),
+    origEnd:   timeToMinutes(shift.end),
+    currentMin: edge === 'start'
+      ? timeToMinutes(shift.start)
+      : timeToMinutes(shift.end)
+  };
+}
+
+// ---- Timeline drag (mouse) ----
+
+function getTrackPct(clientX, trackEl) {
+  const rect = trackEl.getBoundingClientRect();
+  return Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100));
+}
+
+function timelineMouseDown(e, di) {
+  const track = e.currentTarget;
+  const pct   = getTrackPct(e.clientX, track);
+  const startMin = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
+
+  const preview = document.createElement('div');
+  preview.className = 'tl-block preview';
+  track.appendChild(preview);
+
+  drag = { di, track, preview, startMin, endMin: startMin };
+  updateDragPreview();
+  e.preventDefault();
+}
+
+function handleGlobalMouseMove(e) {
+  if (!drag) return;
+  if (drag.mode === 'resize') {
+    const pct = getTrackPct(e.clientX, drag.track);
+    const clamped = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
+    if (drag.edge === 'start') {
+      drag.currentMin = Math.min(clamped, drag.origEnd - SNAP);
+      drag.block.style.left  = minToPct(drag.currentMin) + '%';
+      drag.block.style.width = (minToPct(drag.origEnd) - minToPct(drag.currentMin)) + '%';
+    } else {
+      drag.currentMin = Math.max(clamped, drag.origStart + SNAP);
+      drag.block.style.width = (minToPct(drag.currentMin) - minToPct(drag.origStart)) + '%';
+    }
+    return;
+  }
+  const pct    = getTrackPct(e.clientX, drag.track);
+  drag.endMin  = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
+  updateDragPreview();
+}
+
+function handleGlobalMouseUp() {
+  if (!drag) return;
+  if (drag.mode === 'resize') {
+    const { di, si, edge, currentMin } = drag;
+    const shift = weeks[activeWeek][di][si];
+    if (edge === 'start') shift.start = minToTime(currentMin);
+    else                  shift.end   = minToTime(currentMin);
+    drag = null;
+    renderTimeline(di);
+    renderSummary();
+    return;
+  }
+  const startMin = Math.min(drag.startMin, drag.endMin);
+  const endMin   = Math.max(drag.startMin, drag.endMin);
+
+  drag.preview.remove();
+
+  if (endMin - startMin >= SNAP) {
+    weeks[activeWeek][drag.di].push({
+      start: minToTime(startMin),
+      end:   minToTime(endMin)
+    });
+    renderTimeline(drag.di);
+    renderSummary();
+  }
+  drag = null;
+}
+
+function updateDragPreview() {
+  if (!drag) return;
+  const s = Math.min(drag.startMin, drag.endMin);
+  const e = Math.max(drag.startMin, drag.endMin);
+  const left  = minToPct(s);
+  const width = minToPct(e) - minToPct(s);
+  drag.preview.style.left  = left + '%';
+  drag.preview.style.width = Math.max(0, width) + '%';
+  drag.preview.textContent = e - s >= SNAP ? `${minToTime(s)} – ${minToTime(e)}` : '';
+}
+
+// ---- Timeline drag (touch) ----
+
+function timelineTouchStart(e, di) {
+  const touch = e.touches[0];
+  timelineMouseDown({ currentTarget: e.currentTarget, clientX: touch.clientX, preventDefault: () => e.preventDefault() }, di);
+}
+
+function handleGlobalTouchMove(e) {
+  if (!drag) return;
+  e.preventDefault();
+  handleGlobalMouseMove({ clientX: e.touches[0].clientX });
+}
+
+function handleGlobalTouchEnd() {
+  handleGlobalMouseUp();
+}
+
+// ---- PDF generation ----
+
+function buildPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+
+  const avg       = averageHours();
+  const pct       = ((avg / FULL_WEEK_HOURS) * 100).toFixed(1);
+  const today     = new Date().toLocaleDateString('nb-NO');
+  const avdeling  = document.getElementById('meta-avdeling').value;
+  const leder     = document.getElementById('meta-leder').value;
+  const typeVal   = document.getElementById('meta-type-turnus').value;
+  const typeLabel = typeVal === 'personlig' ? 'Personlig turnus'
+                  : typeVal === 'flerere'   ? 'Turnus for flere sjåfører' : '';
+  const navn           = document.getElementById('meta-navn').value;
+  const antallSjaforer = document.getElementById('meta-antall-sjaforer').value;
+  const arsak          = document.getElementById('meta-arsak').value;
+  const kommentar      = document.getElementById('meta-kommentar').value;
+  const fagforbund     = document.getElementById('meta-fagforbund').value;
+  const ikraftRaw      = document.getElementById('meta-ikraft').value;
+  const ikraft         = ikraftRaw
+    ? new Date(ikraftRaw + 'T12:00:00').toLocaleDateString('nb-NO') : '';
+  const rullerende     = document.getElementById('meta-rullerende').checked;
+
+  const marginL = 20;
+  const pageW   = 210;
+  let y = 20;
+
+  const line = (text, size = 11, bold = false, color = [0, 0, 0]) => {
+    doc.setFontSize(size);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setTextColor(...color);
+    doc.text(text, marginL, y);
+    y += size * 0.45 + 2;
+  };
+
+  const multiLine = (text, size = 10) => {
+    doc.setFontSize(size);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    const lines = doc.splitTextToSize(text, pageW - marginL * 2);
+    lines.forEach(l => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.text(l, marginL, y);
+      y += size * 0.45 + 1.5;
+    });
+    y += 2;
+  };
+
+  const hline = () => {
+    doc.setDrawColor(180, 180, 180);
+    doc.line(marginL, y, pageW - marginL, y);
+    y += 5;
+  };
+
+  const nl = (n = 4) => { y += n; };
+
+  const checkPage = (needed = 30) => {
+    if (y + needed > 275) { doc.addPage(); y = 20; }
+  };
+
+  // Header
+  doc.setFillColor(26, 74, 138);
+  doc.rect(0, 0, pageW, 28, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(255, 255, 255);
+  doc.text('DRØFTINGSNOTAT – TURNUS', pageW / 2, 13, { align: 'center' });
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Til behandling med fagforbundet', pageW / 2, 21, { align: 'center' });
+  y = 36;
+
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Dato: ${today}`, pageW - marginL, y, { align: 'right' });
+  nl(2);
+
+  // Informasjon
+  line('Informasjon', 12, true, [26, 74, 138]);
+  hline();
+  if (avdeling)       { line(`Avdeling: ${avdeling}`, 11); nl(1); }
+  if (leder)          { line(`Avdelingsleder: ${leder}`, 11); nl(1); }
+  if (typeLabel)      { line(`Type turnus: ${typeLabel}`, 11); nl(1); }
+  if (navn)           { line(`Navn: ${navn}`, 11); nl(1); }
+  if (antallSjaforer) { line(`Antall sjåfører: ${antallSjaforer}`, 11); nl(1); }
+  if (ikraft)         { line(`Endringen trer i kraft: ${ikraft}`, 11); nl(1); }
+  line(`Rullerende turnus: ${rullerende ? 'Ja' : 'Nei'}`, 11); nl(1);
+  nl(3);
+
+  // Stillingsprosent
+  checkPage(40);
+  line('Beregning av stillingsprosent', 12, true, [26, 74, 138]);
+  hline();
+  line(`Antall uker i turnus: ${weeks.length}`, 11); nl(1);
+  line(`Gjennomsnittlig arbeidstid per uke: ${avg.toFixed(2)} timer`, 11); nl(1);
+  line(`100% stilling = ${FULL_WEEK_HOURS} timer/uke`, 11); nl(1);
+  line(`Stillingsprosent: ${pct}%`, 13, true, [37, 99, 235]);
+  nl(5);
+
+  // Vaktdetaljer
+  checkPage(30);
+  line('Vaktdetaljer per uke', 12, true, [26, 74, 138]);
+  hline();
+
+  weeks.forEach((week, wi) => {
+    checkPage(60);
+    line(weekLabel(wi), 11, true);
+    nl(1);
+
+    let weekTotal = 0;
+    DAYS.forEach((dayName, di) => {
+      const dayShifts = week[di];
+      if (y > 265) { doc.addPage(); y = 20; }
+
+      if (dayShifts.length === 0) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(150, 150, 150);
+        doc.text(`${dayName}: Fri`, marginL + 4, y);
+        y += 6;
+      } else {
+        dayShifts.forEach((sh) => {
+          const net = calcNetHours(sh);
+          weekTotal += net;
+          const lunch = autoLunch(sh) > 0 ? ` (lunsj: ${autoLunch(sh)} min)` : '';
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(30, 30, 30);
+          doc.text(`${dayName}: ${sh.start} – ${sh.end}${lunch}`, marginL + 4, y);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(37, 99, 235);
+          doc.text(`${net.toFixed(2)} t`, pageW - marginL, y, { align: 'right' });
+          y += 6;
+        });
+      }
+    });
+
+    nl(1);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Sum ${weekLabel(wi)}: ${weekTotal.toFixed(2)} timer`, marginL + 4, y);
+    y += 6;
+    nl(4);
+  });
+
+  // Tilleggsinformasjon
+  if (arsak || kommentar || fagforbund) {
+    checkPage(40);
+    line('Tilleggsinformasjon', 12, true, [26, 74, 138]);
+    hline();
+    if (arsak) {
+      line('Årsak til turnusendring:', 11, true);
+      nl(1);
+      multiLine(arsak);
+      nl(2);
+    }
+    if (kommentar) {
+      line('Annen kommentar:', 11, true);
+      nl(1);
+      multiLine(kommentar);
+      nl(2);
+    }
+    if (fagforbund) {
+      line('Fagforbundets syn / forslag:', 11, true);
+      nl(1);
+      multiLine(fagforbund);
+      nl(2);
+    }
+  }
+
+  // Underskrifter
+  checkPage(50);
+  nl(4);
+  line('Underskrifter', 12, true, [26, 74, 138]);
+  hline();
+
+  const sigLine = (role) => {
+    if (y > 265) { doc.addPage(); y = 20; }
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    doc.text(role + ':', marginL, y);
+    y += 5;
+    doc.setDrawColor(0, 0, 0);
+    doc.line(marginL, y, marginL + 80, y);
+    doc.text('Dato:', marginL + 85, y - 1);
+    doc.line(marginL + 95, y, marginL + 125, y);
+    y += 10;
+  };
+
+  sigLine('Avdelingsleder');
+  sigLine('Tillitsvalgt / Fagforbundet');
+  sigLine('Ansatt');
+
+  // Sidetall
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Side ${p} av ${totalPages}`, pageW - marginL, 290, { align: 'right' });
+  }
+
+  return doc;
+}
+
+function downloadPDF() {
+  try {
+    buildPDF().save('drofting_turnus.pdf');
+    showStatus('success', 'PDF lastet ned.');
+  } catch (err) {
+    showStatus('error', 'Feil ved generering av PDF: ' + err.message);
+  }
+}
+
+function openEmail() {
+  try {
+    buildPDF().save('drofting_turnus.pdf');
+    const avdeling = document.getElementById('meta-avdeling').value || 'Avdeling';
+    const navn     = document.getElementById('meta-navn').value || '';
+    const subject  = encodeURIComponent(`Drøftingsnotat turnus – ${avdeling}${navn ? ' – ' + navn : ''}`);
+    const body     = encodeURIComponent(
+      `Hei,\n\nVedlagt finner du drøftingsnotat for turnus.\n\nAvdeling: ${avdeling}\n` +
+      (navn ? `Navn: ${navn}\n` : '') +
+      `\nVennlig hilsen`
+    );
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    document.getElementById('email-hint').style.display = 'block';
+    showStatus('success', 'PDF lastet ned. Legg den ved i e-posten som åpnet seg.');
+  } catch (err) {
+    showStatus('error', 'Feil: ' + err.message);
+  }
+}
+
+function showStatus(type, msg) {
+  const el = document.getElementById('export-status');
+  el.className = 'status-msg ' + type;
+  el.textContent = msg;
+  setTimeout(() => { el.className = 'status-msg'; }, 8000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('mousemove', handleGlobalMouseMove);
+  document.addEventListener('mouseup',   handleGlobalMouseUp);
+  document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
+  document.addEventListener('touchend',  handleGlobalTouchEnd);
+  // Close popover when clicking outside
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('week-popover');
+    if (pop && pop.style.display !== 'none' && !pop.contains(e.target)) {
+      const tabs = document.getElementById('week-tabs');
+      if (tabs && !tabs.contains(e.target)) closeWeekPopover();
+    }
+  });
+  renderAll();
+});
