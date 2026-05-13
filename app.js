@@ -41,11 +41,23 @@ function pctToMin(pct) {
   return TL_START + (pct / 100) * TL_RANGE;
 }
 
-function calcNetHours(shift) {
+const AUTO_LUNCH_THRESHOLD = 5.5 * 60; // 330 min gross
+const AUTO_LUNCH_MINUTES   = 30;
+
+function grossMinutes(shift) {
   const start = timeToMinutes(shift.start);
   const end   = timeToMinutes(shift.end);
-  if (end <= start) return 0;
-  return Math.max(0, (end - start) - (shift.lunchMinutes || 0)) / 60;
+  return end > start ? end - start : 0;
+}
+
+function autoLunch(shift) {
+  return grossMinutes(shift) > AUTO_LUNCH_THRESHOLD ? AUTO_LUNCH_MINUTES : 0;
+}
+
+function calcNetHours(shift) {
+  const gross = grossMinutes(shift);
+  if (gross <= 0) return 0;
+  return Math.max(0, gross - autoLunch(shift)) / 60;
 }
 
 function weekTotalHours(weekIdx) {
@@ -155,15 +167,16 @@ function renderTimeline(di) {
     block.innerHTML = `<span class="tl-block-label">${shift.start}–${shift.end}</span>`;
     track.appendChild(block);
 
+    const lunch = autoLunch(shift);
+    const lunchTag = lunch > 0
+      ? `<span class="sd-lunch-auto">🍽 ${lunch} min lunsj inkl.</span>`
+      : '';
+
     const detail = document.createElement('div');
     detail.className = 'shift-detail-row';
     detail.innerHTML = `
       <span class="sd-time">${shift.start} – ${shift.end}</span>
-      <span class="sd-sep">|</span>
-      <label class="sd-label">Lunsj:</label>
-      <input class="sd-lunch" type="number" min="0" max="120" step="5" value="${shift.lunchMinutes}"
-        onchange="updateShift(${di},${si},'lunchMinutes',parseInt(this.value)||0)">
-      <span class="sd-label">min</span>
+      ${lunchTag}
       <span class="sd-net">${net.toFixed(2)} t</span>
       <button class="sd-delete" onclick="removeShift(${di},${si})" title="Slett vakt">✕</button>
     `;
@@ -277,8 +290,7 @@ function handleGlobalMouseUp() {
   if (endMin - startMin >= SNAP) {
     weeks[activeWeek][drag.di].push({
       start: minToTime(startMin),
-      end:   minToTime(endMin),
-      lunchMinutes: 0
+      end:   minToTime(endMin)
     });
     renderTimeline(drag.di);
     renderSummary();
@@ -428,7 +440,7 @@ function buildPDF() {
         dayShifts.forEach((sh) => {
           const net = calcNetHours(sh);
           weekTotal += net;
-          const lunch = sh.lunchMinutes > 0 ? ` (lunsj: ${sh.lunchMinutes} min)` : '';
+          const lunch = autoLunch(sh) > 0 ? ` (lunsj: ${autoLunch(sh)} min)` : '';
           doc.setFontSize(10);
           doc.setFont('helvetica', 'normal');
           doc.setTextColor(30, 30, 30);
