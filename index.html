@@ -37,6 +37,10 @@
             <option value="flerere">Turnus for flere sjåfører</option>
           </select>
         </div>
+        <div class="field">
+          <label for="meta-ikraft">Endringen trer i kraft</label>
+          <input id="meta-ikraft" type="date">
+        </div>
       </div>
 
       <div id="box-personlig" class="dynamic-box" style="display:none;">
@@ -62,13 +66,32 @@
           <label for="meta-kommentar">Annen kommentar</label>
           <textarea id="meta-kommentar" rows="3" placeholder="Andre kommentarer som skal med i drøftingsnotatet..."></textarea>
         </div>
+        <div class="field">
+          <label for="meta-fagforbund">Fagforbundets syn / forslag</label>
+          <textarea id="meta-fagforbund" rows="3" placeholder="Fagforbundets kommentar til turnus..."></textarea>
+        </div>
       </div>
     </div>
 
     <!-- Vakter -->
     <div class="card">
       <h2>Vakter</h2>
-      <div id="week-tabs" class="week-tabs"></div>
+      <div class="week-tabs-container">
+        <div id="week-tabs" class="week-tabs"></div>
+        <div id="week-popover" class="week-popover" style="display:none;">
+          <div class="week-popover-title">Sett ukenummer</div>
+          <label class="week-popover-label">Ukenummer
+            <input id="pop-weeknum" type="number" min="1" max="53">
+          </label>
+          <label class="week-popover-label">År
+            <input id="pop-year" type="number" min="2020" max="2040">
+          </label>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <button class="btn-primary" style="padding:6px 14px;font-size:0.85rem;" onclick="saveWeekMeta()">Lagre</button>
+            <button class="btn-secondary" style="padding:6px 14px;font-size:0.85rem;" onclick="closeWeekPopover()">Avbryt</button>
+          </div>
+        </div>
+      </div>
       <div id="days-grid" class="days-grid"></div>
     </div>
 

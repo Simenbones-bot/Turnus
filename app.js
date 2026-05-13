@@ -7,9 +7,11 @@ const TL_END   = 23 * 60;  // 1380 min
 const TL_RANGE = TL_END - TL_START; // 1020 min
 const SNAP = 15; // minute snap grid
 
-let weeks = [emptyWeek()];
+let weeks    = [emptyWeek()];
+let weekMeta = [{ num: null, year: new Date().getFullYear() }];
 let activeWeek = 0;
 let drag = null;
+let editingWeekIdx = null;
 
 function emptyWeek() {
   return Array.from({ length: 7 }, () => []);
@@ -70,12 +72,58 @@ function averageHours() {
   return weeks.reduce((s, _, i) => s + weekTotalHours(i), 0) / weeks.length;
 }
 
+// ---- Week label helpers ----
+
+function isoWeekDates(weekNum, year) {
+  const jan4 = new Date(year, 0, 4);
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (weekNum - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { monday, sunday };
+}
+
+function weekLabel(i) {
+  const m = weekMeta[i];
+  if (!m || !m.num) return `Uke ${i + 1}`;
+  const { monday, sunday } = isoWeekDates(m.num, m.year);
+  const fmt = d => d.toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' });
+  return `Uke ${m.num}  ·  ${fmt(monday)}–${fmt(sunday)}`;
+}
+
 // ---- Type turnus ----
 
 function onTurnusTypeChange() {
   const val = document.getElementById('meta-type-turnus').value;
   document.getElementById('box-personlig').style.display = val === 'personlig' ? 'block' : 'none';
   document.getElementById('box-sjaforer').style.display  = val === 'flerere'   ? 'block' : 'none';
+}
+
+// ---- Week popover ----
+
+function openWeekPopover(i) {
+  editingWeekIdx = i;
+  const pop = document.getElementById('week-popover');
+  document.getElementById('pop-weeknum').value = weekMeta[i].num || '';
+  document.getElementById('pop-year').value    = weekMeta[i].year || new Date().getFullYear();
+  pop.style.display = 'flex';
+  document.getElementById('pop-weeknum').focus();
+}
+
+function saveWeekMeta() {
+  if (editingWeekIdx === null) return;
+  const num  = parseInt(document.getElementById('pop-weeknum').value, 10);
+  const year = parseInt(document.getElementById('pop-year').value, 10);
+  if (num >= 1 && num <= 53 && year >= 2020 && year <= 2040) {
+    weekMeta[editingWeekIdx] = { num, year };
+  }
+  closeWeekPopover();
+  renderAll();
+}
+
+function closeWeekPopover() {
+  document.getElementById('week-popover').style.display = 'none';
+  editingWeekIdx = null;
 }
 
 // ---- Render week tabs ----
@@ -86,8 +134,10 @@ function renderWeekTabs() {
   weeks.forEach((_, i) => {
     const tab = document.createElement('button');
     tab.className = 'week-tab' + (i === activeWeek ? ' active' : '');
-    tab.textContent = `Uke ${i + 1}`;
+    tab.textContent = weekLabel(i);
+    tab.title = 'Klikk for å bytte uke · Dobbeltklikk for å sette ukenummer';
     tab.onclick = () => { activeWeek = i; renderAll(); };
+    tab.ondblclick = (e) => { e.stopPropagation(); openWeekPopover(i); };
     wrap.appendChild(tab);
     if (weeks.length > 1) {
       const del = document.createElement('button');
@@ -215,7 +265,7 @@ function renderSummary() {
     const p = ((h / FULL_WEEK_HOURS) * 100).toFixed(1);
     const item = document.createElement('div');
     item.className = 'week-hours-item';
-    item.innerHTML = `<span>Uke ${i + 1}</span><span>${h.toFixed(2)} t &nbsp;(${p}%)</span>`;
+    item.innerHTML = `<span>${weekLabel(i)}</span><span>${h.toFixed(2)} t &nbsp;(${p}%)</span>`;
     list.appendChild(item);
   });
 }
@@ -230,24 +280,20 @@ function renderAll() {
 
 function addWeek() {
   weeks.push(emptyWeek());
+  weekMeta.push({ num: null, year: new Date().getFullYear() });
   activeWeek = weeks.length - 1;
   renderAll();
 }
 
 function deleteWeek(i) {
   weeks.splice(i, 1);
+  weekMeta.splice(i, 1);
   if (activeWeek >= weeks.length) activeWeek = weeks.length - 1;
   renderAll();
 }
 
 function removeShift(di, si) {
   weeks[activeWeek][di].splice(si, 1);
-  renderTimeline(di);
-  renderSummary();
-}
-
-function updateShift(di, si, field, value) {
-  weeks[activeWeek][di][si][field] = value;
   renderTimeline(di);
   renderSummary();
 }
@@ -344,6 +390,10 @@ function buildPDF() {
   const antallSjaforer = document.getElementById('meta-antall-sjaforer').value;
   const arsak          = document.getElementById('meta-arsak').value;
   const kommentar      = document.getElementById('meta-kommentar').value;
+  const fagforbund     = document.getElementById('meta-fagforbund').value;
+  const ikraftRaw      = document.getElementById('meta-ikraft').value;
+  const ikraft         = ikraftRaw
+    ? new Date(ikraftRaw + 'T12:00:00').toLocaleDateString('nb-NO') : '';
 
   const marginL = 20;
   const pageW   = 210;
@@ -382,6 +432,7 @@ function buildPDF() {
     if (y + needed > 275) { doc.addPage(); y = 20; }
   };
 
+  // Header
   doc.setFillColor(26, 74, 138);
   doc.rect(0, 0, pageW, 28, 'F');
   doc.setFont('helvetica', 'bold');
@@ -398,6 +449,7 @@ function buildPDF() {
   doc.text(`Dato: ${today}`, pageW - marginL, y, { align: 'right' });
   nl(2);
 
+  // Informasjon
   line('Informasjon', 12, true, [26, 74, 138]);
   hline();
   if (avdeling)       { line(`Avdeling: ${avdeling}`, 11); nl(1); }
@@ -405,8 +457,10 @@ function buildPDF() {
   if (typeLabel)      { line(`Type turnus: ${typeLabel}`, 11); nl(1); }
   if (navn)           { line(`Navn: ${navn}`, 11); nl(1); }
   if (antallSjaforer) { line(`Antall sjåfører: ${antallSjaforer}`, 11); nl(1); }
+  if (ikraft)         { line(`Endringen trer i kraft: ${ikraft}`, 11); nl(1); }
   nl(3);
 
+  // Stillingsprosent
   checkPage(40);
   line('Beregning av stillingsprosent', 12, true, [26, 74, 138]);
   hline();
@@ -416,13 +470,14 @@ function buildPDF() {
   line(`Stillingsprosent: ${pct}%`, 13, true, [37, 99, 235]);
   nl(5);
 
+  // Vaktdetaljer
   checkPage(30);
   line('Vaktdetaljer per uke', 12, true, [26, 74, 138]);
   hline();
 
   weeks.forEach((week, wi) => {
     checkPage(60);
-    line(`Uke ${wi + 1}`, 11, true);
+    line(weekLabel(wi), 11, true);
     nl(1);
 
     let weekTotal = 0;
@@ -457,12 +512,13 @@ function buildPDF() {
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text(`Sum uke ${wi + 1}: ${weekTotal.toFixed(2)} timer`, marginL + 4, y);
+    doc.text(`Sum ${weekLabel(wi)}: ${weekTotal.toFixed(2)} timer`, marginL + 4, y);
     y += 6;
     nl(4);
   });
 
-  if (arsak || kommentar) {
+  // Tilleggsinformasjon
+  if (arsak || kommentar || fagforbund) {
     checkPage(40);
     line('Tilleggsinformasjon', 12, true, [26, 74, 138]);
     hline();
@@ -478,8 +534,15 @@ function buildPDF() {
       multiLine(kommentar);
       nl(2);
     }
+    if (fagforbund) {
+      line('Fagforbundets syn / forslag:', 11, true);
+      nl(1);
+      multiLine(fagforbund);
+      nl(2);
+    }
   }
 
+  // Underskrifter
   checkPage(50);
   nl(4);
   line('Underskrifter', 12, true, [26, 74, 138]);
@@ -502,6 +565,16 @@ function buildPDF() {
   sigLine('Avdelingsleder');
   sigLine('Tillitsvalgt / Fagforbundet');
   sigLine('Ansatt');
+
+  // Sidetall
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Side ${p} av ${totalPages}`, pageW - marginL, 290, { align: 'right' });
+  }
 
   return doc;
 }
@@ -546,5 +619,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('mouseup',   handleGlobalMouseUp);
   document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false });
   document.addEventListener('touchend',  handleGlobalTouchEnd);
+  // Close popover when clicking outside
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('week-popover');
+    if (pop && pop.style.display !== 'none' && !pop.contains(e.target)) {
+      const tabs = document.getElementById('week-tabs');
+      if (tabs && !tabs.contains(e.target)) closeWeekPopover();
+    }
+  });
   renderAll();
 });
