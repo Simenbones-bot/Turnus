@@ -462,6 +462,28 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
 
 .btn-secondary:hover { background: #ebf4ff; }
 
+.checkbox-row {
+  margin-top: 14px;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1a202c;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
 .status-msg {
   margin-top: 10px;
   font-size: 0.9rem;

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Turnus Generator</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20250513b">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
@@ -70,6 +70,13 @@
           <label for="meta-fagforbund">Fagforbundets syn / forslag</label>
           <textarea id="meta-fagforbund" rows="3" placeholder="Fagforbundets kommentar til turnus..."></textarea>
         </div>
+      </div>
+
+      <div class="checkbox-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="meta-rullerende" checked>
+          Rullerende turnus
+        </label>
       </div>
     </div>
 
@@ -146,6 +153,6 @@
 
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20250513b"></script>
 </body>
 </html>

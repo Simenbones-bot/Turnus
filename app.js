@@ -394,6 +394,7 @@ function buildPDF() {
   const ikraftRaw      = document.getElementById('meta-ikraft').value;
   const ikraft         = ikraftRaw
     ? new Date(ikraftRaw + 'T12:00:00').toLocaleDateString('nb-NO') : '';
+  const rullerende     = document.getElementById('meta-rullerende').checked;
 
   const marginL = 20;
   const pageW   = 210;
@@ -458,6 +459,7 @@ function buildPDF() {
   if (navn)           { line(`Navn: ${navn}`, 11); nl(1); }
   if (antallSjaforer) { line(`Antall sjåfører: ${antallSjaforer}`, 11); nl(1); }
   if (ikraft)         { line(`Endringen trer i kraft: ${ikraft}`, 11); nl(1); }
+  line(`Rullerende turnus: ${rullerende ? 'Ja' : 'Nei'}`, 11); nl(1);
   nl(3);
 
   // Stillingsprosent
