@@ -624,7 +624,6 @@ function buildPDF() {
 
   sigLine('Avdelingsleder');
   sigLine('Tillitsvalgt / Fagforbundet');
-  sigLine('Ansatt');
 
   // Sidetall
   const totalPages = doc.getNumberOfPages();
