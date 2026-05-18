@@ -426,8 +426,7 @@ function deleteWeek(i) {
 
 function removeShift(di, si) {
   weeks[activeWeek][di].splice(si, 1);
-  renderTimeline(di);
-  renderSummary();
+  if (lastebil) { renderAll(); } else { renderTimeline(di); renderSummary(); }
 }
 
 function startResize(e, di, si, edge, track, block) {
@@ -493,8 +492,7 @@ function handleGlobalMouseUp() {
     if (edge === 'start') shift.start = minToTime(currentMin);
     else                  shift.end   = minToTime(currentMin);
     drag = null;
-    renderTimeline(di);
-    renderSummary();
+    if (lastebil) { renderAll(); } else { renderTimeline(di); renderSummary(); }
     return;
   }
   const startMin = Math.min(drag.startMin, drag.endMin);
@@ -507,8 +505,7 @@ function handleGlobalMouseUp() {
       start: minToTime(startMin),
       end:   minToTime(endMin)
     });
-    renderTimeline(drag.di);
-    renderSummary();
+    if (lastebil) { renderAll(); } else { renderTimeline(drag.di); renderSummary(); }
   }
   drag = null;
 }
