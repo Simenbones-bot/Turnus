@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Turnus Generator</title>
-  <link rel="stylesheet" href="style.css?v=20250513e">
+  <link rel="stylesheet" href="style.css?v=20250513f">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
@@ -76,6 +76,10 @@
         <label class="checkbox-label">
           <input type="checkbox" id="meta-rullerende" checked>
           Rullerende turnus
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="meta-lastebil" onchange="onLastebilChange()">
+          Lastebil (FATS-regler)
         </label>
       </div>
     </div>
@@ -153,6 +157,6 @@
 
   </div>
 
-  <script src="app.js?v=20250513e"></script>
+  <script src="app.js?v=20250513f"></script>
 </body>
 </html>

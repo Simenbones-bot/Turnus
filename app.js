@@ -12,6 +12,7 @@ let weekMeta = [{ num: null, year: new Date().getFullYear() }];
 let activeWeek = 0;
 let drag = null;
 let editingWeekIdx = null;
+let lastebil = false;
 
 function emptyWeek() {
   return Array.from({ length: 7 }, () => []);
@@ -91,6 +92,93 @@ function weekLabel(i) {
   return `Uke ${m.num}  ·  ${fmt(monday)}–${fmt(sunday)}`;
 }
 
+// ---- Lastebil / FATS ----
+
+function onLastebilChange() {
+  lastebil = document.getElementById('meta-lastebil').checked;
+  renderAll();
+}
+
+function getFatsViolations(weekIdx) {
+  const week = weeks[weekIdx];
+  const shifts = week.map(dayShifts =>
+    dayShifts.map(sh => ({
+      startMin: timeToMinutes(sh.start),
+      endMin:   timeToMinutes(sh.end),
+      net:      calcNetHours(sh)
+    }))
+  );
+
+  // v[di][si] = string[]
+  const v = Array.from({ length: 7 }, () => []);
+  const weekV = [];
+
+  // Regel 1: maks 10t netto per vakt
+  shifts.forEach((dayShifts, di) => {
+    dayShifts.forEach((sh, si) => {
+      if (sh.net > 10) {
+        v[di][si] = v[di][si] || [];
+        v[di][si].push(`FATS: Maks 10t netto per dag (${sh.net.toFixed(2)}t)`);
+      }
+    });
+  });
+
+  // Regel 2: maks 60t per uke
+  const weekTotal = weekTotalHours(weekIdx);
+  if (weekTotal > 60) {
+    weekV.push(`FATS: Maks 60t/uke (${weekTotal.toFixed(2)}t)`);
+    shifts.forEach((dayShifts, di) => {
+      dayShifts.forEach((_, si) => {
+        v[di][si] = v[di][si] || [];
+        v[di][si].push('FATS: Ukestotal over 60t');
+      });
+    });
+  }
+
+  // Regel 3: min 11t hvile mellom siste vakt én dag og første vakt neste dag
+  for (let di = 0; di <= 5; di++) {
+    const today = shifts[di];
+    const tomorrow = shifts[di + 1];
+    if (today.length === 0 || tomorrow.length === 0) continue;
+    const lastEnd    = Math.max(...today.map(s => s.endMin));
+    const firstStart = Math.min(...tomorrow.map(s => s.startMin));
+    const restMin = (firstStart + 24 * 60) - lastEnd;
+    if (restMin < 11 * 60) {
+      const restH = (restMin / 60).toFixed(1);
+      const firstSi = tomorrow.findIndex(s => s.startMin === firstStart);
+      v[di + 1][firstSi] = v[di + 1][firstSi] || [];
+      v[di + 1][firstSi].push(`FATS: Hvile kun ${restH}t (min 11t kreves)`);
+    }
+  }
+
+  // Regel 4: minst 1 fridag (24t sammenhengende hvile) per uke
+  const intervals = [];
+  shifts.forEach((dayShifts, di) => {
+    dayShifts.forEach(sh => {
+      intervals.push({
+        start: di * 24 * 60 + sh.startMin,
+        end:   di * 24 * 60 + sh.endMin
+      });
+    });
+  });
+  intervals.sort((a, b) => a.start - b.start);
+
+  let hasFridag = false;
+  if (intervals.length === 0) {
+    hasFridag = true;
+  } else {
+    if (intervals[0].start >= 24 * 60) hasFridag = true;
+    for (let i = 0; i < intervals.length - 1 && !hasFridag; i++) {
+      if (intervals[i + 1].start - intervals[i].end >= 24 * 60) hasFridag = true;
+    }
+    const last = intervals[intervals.length - 1];
+    if ((7 * 24 * 60) - last.end >= 24 * 60) hasFridag = true;
+  }
+  if (!hasFridag) weekV.push('FATS: Ingen fridag (min 24t sammenhengende hvile) i uken');
+
+  return { shifts: v, week: weekV };
+}
+
 // ---- Type turnus ----
 
 function onTurnusTypeChange() {
@@ -132,10 +220,14 @@ function renderWeekTabs() {
   const wrap = document.getElementById('week-tabs');
   wrap.innerHTML = '';
   weeks.forEach((_, i) => {
+    const fatsWeek = lastebil ? getFatsViolations(i) : null;
     const tab = document.createElement('button');
     tab.className = 'week-tab' + (i === activeWeek ? ' active' : '');
-    tab.textContent = weekLabel(i);
-    tab.title = 'Klikk for å bytte uke · Dobbeltklikk for å sette ukenummer';
+    if (fatsWeek?.week?.length > 0) tab.classList.add('fats-violation');
+    tab.textContent = weekLabel(i) + (fatsWeek?.week?.length > 0 ? ' ⚠' : '');
+    tab.title = fatsWeek?.week?.length > 0
+      ? fatsWeek.week.join('\n')
+      : 'Klikk for å bytte uke · Dobbeltklikk for å sette ukenummer';
     tab.onclick = () => { activeWeek = i; renderAll(); };
     tab.ondblclick = (e) => { e.stopPropagation(); openWeekPopover(i); };
     wrap.appendChild(tab);
@@ -202,6 +294,8 @@ function renderTimeline(di) {
   track.querySelectorAll('.tl-block:not(.preview)').forEach(el => el.remove());
   details.innerHTML = '';
 
+  const fats = lastebil ? getFatsViolations(activeWeek) : null;
+
   weeks[activeWeek][di].forEach((shift, si) => {
     const startMin = timeToMinutes(shift.start);
     const endMin   = timeToMinutes(shift.end);
@@ -236,6 +330,12 @@ function renderTimeline(di) {
 
     block.appendChild(lh);
     block.appendChild(rh);
+
+    const shiftViolations = fats?.shifts[di][si] || [];
+    if (shiftViolations.length > 0) {
+      block.classList.add('fats-violation');
+      block.title = shiftViolations.join(' | ');
+    }
     track.appendChild(block);
 
     const lunch = autoLunch(shift);
@@ -245,9 +345,14 @@ function renderTimeline(di) {
 
     const detail = document.createElement('div');
     detail.className = 'shift-detail-row';
+    if (shiftViolations.length > 0) detail.classList.add('fats-violation');
+    const violationTag = shiftViolations.length > 0
+      ? `<span class="sd-fats-warn" title="${shiftViolations.join('&#10;')}">⚠ FATS</span>`
+      : '';
     detail.innerHTML = `
       <span class="sd-time">${shift.start} – ${shift.end}</span>
       ${lunchTag}
+      ${violationTag}
       <span class="sd-net">${net.toFixed(2)} t</span>
       <button class="sd-delete" onclick="removeShift(${di},${si})" title="Slett vakt">✕</button>
     `;
@@ -518,6 +623,7 @@ function buildPDF() {
   if (antallSjaforer) { line(`Antall sjåfører: ${antallSjaforer}`, 11); nl(1); }
   if (ikraft)         { line(`Endringen trer i kraft: ${ikraft}`, 11); nl(1); }
   line(`Rullerende turnus: ${rullerende ? 'Ja' : 'Nei'}`, 11); nl(1);
+  if (lastebil)       { line('Lastebil (FATS-regler): Ja', 11); nl(1); }
   nl(3);
 
   // Stillingsprosent
