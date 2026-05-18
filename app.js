@@ -54,7 +54,13 @@ function grossMinutes(shift) {
 }
 
 function autoLunch(shift) {
-  return grossMinutes(shift) > AUTO_LUNCH_THRESHOLD ? AUTO_LUNCH_MINUTES : 0;
+  const gross = grossMinutes(shift);
+  if (lastebil) {
+    if (gross > 9 * 60) return 45;
+    if (gross >= 6 * 60) return 30;
+    return 0;
+  }
+  return gross > AUTO_LUNCH_THRESHOLD ? AUTO_LUNCH_MINUTES : 0;
 }
 
 function calcNetHours(shift) {
