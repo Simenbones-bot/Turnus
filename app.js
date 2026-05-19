@@ -316,6 +316,13 @@ function renderTimeline(di) {
     block.title = `${shift.start} – ${shift.end}`;
     block.innerHTML = `<span class="tl-block-label">${shift.start}–${shift.end}</span>`;
 
+    block.addEventListener('mousedown', e => startMove(e, di, si, track, block));
+    block.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startMove({ clientX: t.clientX, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() },
+        di, si, track, block);
+    }, { passive: false });
+
     const lh = document.createElement('div');
     lh.className = 'tl-resize-handle tl-resize-left';
     lh.addEventListener('mousedown', e => startResize(e, di, si, 'start', track, block));
@@ -429,6 +436,22 @@ function removeShift(di, si) {
   if (lastebil) { renderAll(); } else { renderTimeline(di); renderSummary(); }
 }
 
+function startMove(e, di, si, track, block) {
+  e.preventDefault();
+  e.stopPropagation();
+  const shift = weeks[activeWeek][di][si];
+  const startMin  = timeToMinutes(shift.start);
+  const endMin    = timeToMinutes(shift.end);
+  const duration  = endMin - startMin;
+  const clickMin  = pctToMin(getTrackPct(e.clientX, track));
+  document.body.style.cursor = 'grabbing';
+  drag = {
+    mode: 'move', di, si, track, block, duration,
+    offsetMin:    clickMin - startMin,
+    currentStart: startMin
+  };
+}
+
 function startResize(e, di, si, edge, track, block) {
   e.preventDefault();
   e.stopPropagation();
@@ -466,6 +489,17 @@ function timelineMouseDown(e, di) {
 
 function handleGlobalMouseMove(e) {
   if (!drag) return;
+  if (drag.mode === 'move') {
+    const pct          = getTrackPct(e.clientX, drag.track);
+    const rawStart     = pctToMin(pct) - drag.offsetMin;
+    const clampedStart = Math.max(TL_START, Math.min(TL_END - drag.duration, snapMin(rawStart)));
+    drag.currentStart  = clampedStart;
+    drag.block.style.left  = minToPct(clampedStart) + '%';
+    drag.block.style.width = (minToPct(clampedStart + drag.duration) - minToPct(clampedStart)) + '%';
+    const label = drag.block.querySelector('.tl-block-label');
+    if (label) label.textContent = `${minToTime(clampedStart)}–${minToTime(clampedStart + drag.duration)}`;
+    return;
+  }
   if (drag.mode === 'resize') {
     const pct = getTrackPct(e.clientX, drag.track);
     const clamped = Math.max(TL_START, Math.min(TL_END, snapMin(pctToMin(pct))));
@@ -486,6 +520,16 @@ function handleGlobalMouseMove(e) {
 
 function handleGlobalMouseUp() {
   if (!drag) return;
+  document.body.style.cursor = '';
+  if (drag.mode === 'move') {
+    const { di, si, currentStart, duration } = drag;
+    const shift = weeks[activeWeek][di][si];
+    shift.start = minToTime(currentStart);
+    shift.end   = minToTime(currentStart + duration);
+    drag = null;
+    if (lastebil) { renderAll(); } else { renderTimeline(di); renderSummary(); }
+    return;
+  }
   if (drag.mode === 'resize') {
     const { di, si, edge, currentMin } = drag;
     const shift = weeks[activeWeek][di][si];

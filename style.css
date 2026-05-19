@@ -287,7 +287,8 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
   color: white;
   font-size: 0.7rem;
   font-weight: 600;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
   box-shadow: 0 1px 4px rgba(37,99,235,0.35);
   overflow: hidden;
   white-space: nowrap;
@@ -301,6 +302,8 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
   border: 2px dashed #2563eb;
   color: #1d4ed8;
   box-shadow: none;
+  cursor: crosshair;
+  pointer-events: none;
 }
 
 .tl-resize-handle {
