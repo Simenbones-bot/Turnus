@@ -287,7 +287,8 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
   color: white;
   font-size: 0.7rem;
   font-weight: 600;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
   box-shadow: 0 1px 4px rgba(37,99,235,0.35);
   overflow: hidden;
   white-space: nowrap;
@@ -301,6 +302,8 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
   border: 2px dashed #2563eb;
   color: #1d4ed8;
   box-shadow: none;
+  cursor: crosshair;
+  pointer-events: none;
 }
 
 .tl-resize-handle {
@@ -314,6 +317,42 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
 .tl-resize-left  { left: 0; border-radius: 5px 0 0 5px; }
 .tl-resize-right { right: 0; border-radius: 0 5px 5px 0; }
 .tl-resize-handle:hover { background: rgba(255,255,255,0.35); }
+
+/* FATS violations */
+.tl-block.fats-violation {
+  background: linear-gradient(135deg, #e53e3e 0%, #fc8181 100%);
+  box-shadow: 0 1px 4px rgba(229,62,62,0.45);
+}
+
+.shift-detail-row.fats-violation {
+  background: #fff5f5;
+  border-color: #fc8181;
+}
+
+.shift-detail-row.fats-violation .sd-time { color: #c53030; }
+
+.sd-fats-warn {
+  font-size: 0.75rem;
+  color: #c53030;
+  background: #fff5f5;
+  border: 1px solid #fc8181;
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.week-tab.fats-violation {
+  border-color: #fc8181;
+  color: #c53030;
+  background: #fff5f5;
+}
+
+.week-tab.fats-violation.active {
+  background: #e53e3e;
+  color: white;
+  border-color: #e53e3e;
+}
 
 .tl-hint {
   font-size: 0.73rem;
@@ -476,6 +515,9 @@ header p { font-size: 0.85rem; opacity: 0.85; margin-top: 3px; }
 
 .checkbox-row {
   margin-top: 14px;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
 .checkbox-label {
